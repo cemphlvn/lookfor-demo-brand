@@ -21,16 +21,17 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Copy built files
-COPY --from=builder /app/dist ./dist
+# Copy source and config
+COPY --from=builder /app/src ./src
 COPY --from=builder /app/package.json ./
+COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/data ./data
 
 # Copy public assets (dashboard)
 COPY public ./public
 
-# Install production deps only
-RUN npm install --production
+# Install all deps (tsx needed for ESM)
+RUN npm install
 
 # Environment
 ENV NODE_ENV=production
@@ -38,4 +39,4 @@ ENV PORT=3001
 
 EXPOSE 3001
 
-CMD ["node", "dist/api/server.js"]
+CMD ["npx", "tsx", "src/api/server.ts"]

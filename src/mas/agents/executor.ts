@@ -201,7 +201,38 @@ export function createLLMClient(): LLMClient {
     console.log('[LLM] Using Google Gemini');
     return createGoogleClient(process.env.GOOGLE_API_KEY);
   }
+  if (process.env.USE_MOCK_API === 'true') {
+    console.log('[LLM] Using Mock LLM (demo mode)');
+    return createMockLLMClient();
+  }
   throw new Error('No LLM API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY');
+}
+
+/**
+ * Create Mock LLM client for demo/testing
+ */
+export function createMockLLMClient(): LLMClient {
+  return {
+    async chat(messages: LLMMessage[], tools?: object[]) {
+      const lastUser = messages.filter(m => m.role === 'user').pop();
+      const content = (lastUser?.content || '').toLowerCase();
+
+      // Simulate different responses based on content
+      if (content.includes('human') || content.includes('manager') || content.includes('supervisor')) {
+        return { content: 'I understand you would like to speak with a human agent. Let me connect you with our support team right away.', tool_calls: undefined };
+      }
+      if (content.includes('order') || content.includes('tracking')) {
+        return { content: 'I can help you with your order. Let me look up your recent orders.', tool_calls: undefined };
+      }
+      if (content.includes('refund') || content.includes('return')) {
+        return { content: 'I understand you would like a refund. Let me check your order details and process this for you.', tool_calls: undefined };
+      }
+      if (content.includes('subscription') || content.includes('cancel')) {
+        return { content: 'I can help you manage your subscription. Let me pull up your account details.', tool_calls: undefined };
+      }
+      return { content: 'I understand your request. Let me help you with that. Is there anything specific you would like me to assist you with?', tool_calls: undefined };
+    }
+  };
 }
 
 /**
