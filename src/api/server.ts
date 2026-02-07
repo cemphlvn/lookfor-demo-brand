@@ -12,6 +12,10 @@
 import 'dotenv/config';
 
 import { MASRuntime, SessionStartParams } from '../mas/runtime';
+import { createSimulationRouter, createJudgeRouter } from './simulation';
+import { simulationEngine } from '../mas/simulation';
+import { getAllScenarios } from '../mas/simulation/scenarios';
+import { judgeTeam } from '../mas/judge';
 import { MASConfig } from '../meta/agent-generator';
 import { buildDefaultMAS } from '../meta/mas-builder';
 import { buildNATPATMAS } from '../brands/natpat';
@@ -144,6 +148,113 @@ export class APIServer {
       pattern: /^\/config$/,
       handler: async () => {
         return this.json({ success: true, config: this.runtime.getConfig() });
+      }
+    });
+
+    // === SIMULATION & JUDGE ROUTES (CI/CD Integration) ===
+
+    // Initialize scenarios
+    this.routes.push({
+      method: 'POST',
+      pattern: /^\/simulate\/init$/,
+      handler: async () => {
+        const scenarios = getAllScenarios();
+        scenarios.forEach(s => simulationEngine.registerScenario({ ...s, status: 'pending' }));
+        return this.json({ success: true, registered: scenarios.length });
+      }
+    });
+
+    // Run all scenarios
+    this.routes.push({
+      method: 'POST',
+      pattern: /^\/simulate\/run-all$/,
+      handler: async () => {
+        const executor = async (sid: string, msg: string) => {
+          const sessionId = this.runtime.startSession({
+            customerEmail: 'sim@test.com',
+            firstName: 'Sim',
+            lastName: 'Test',
+            shopifyCustomerId: 'sim_test'
+          });
+          return this.runtime.handleMessage(sessionId, msg);
+        };
+
+        const results = [];
+        for (const scenario of simulationEngine.getScenarios()) {
+          try {
+            const timeline = await simulationEngine.runSimulation(scenario.id, executor);
+            results.push({ id: scenario.id, status: 'completed', score: timeline.finalState.qualityScore });
+          } catch (e) {
+            results.push({ id: scenario.id, status: 'error', error: String(e) });
+          }
+        }
+        return this.json({ success: true, results, total: results.length });
+      }
+    });
+
+    // Get dashboard data
+    this.routes.push({
+      method: 'GET',
+      pattern: /^\/simulate\/dashboard$/,
+      handler: async () => {
+        return this.json(simulationEngine.exportDashboardData());
+      }
+    });
+
+    // Judge session
+    this.routes.push({
+      method: 'POST',
+      pattern: /^\/judge\/session$/,
+      handler: async () => {
+        const session = judgeTeam.startSession();
+        return this.json({ success: true, session });
+      }
+    });
+
+    // Integration checks
+    this.routes.push({
+      method: 'POST',
+      pattern: /^\/judge\/integration$/,
+      handler: async () => {
+        const checks = judgeTeam.runIntegrationChecks();
+        return this.json({ success: true, checks, passed: checks.filter(c => c.status === 'pass').length });
+      }
+    });
+
+    // Consensus
+    this.routes.push({
+      method: 'POST',
+      pattern: /^\/judge\/consensus$/,
+      handler: async () => {
+        const session = judgeTeam.getLatestSession();
+        if (!session) return this.json({ success: false, error: 'No active session' }, 400);
+        judgeTeam.judgeAllScenarios(session.id);
+        const verdict = judgeTeam.reachConsensus(session.id);
+        return this.json({ success: true, verdict });
+      }
+    });
+
+    // CI/CD Gate
+    this.routes.push({
+      method: 'GET',
+      pattern: /^\/judge\/gate$/,
+      handler: async () => {
+        const report = judgeTeam.exportReport();
+        const pass = report.verdict?.recommendation === 'SHIP';
+        return this.json({
+          gate: pass ? 'PASS' : 'FAIL',
+          recommendation: report.verdict?.recommendation || 'PENDING',
+          score: report.verdict?.overallScore || 0
+        });
+      }
+    });
+
+    // Report
+    this.routes.push({
+      method: 'GET',
+      pattern: /^\/judge\/report$/,
+      handler: async () => {
+        return this.json(judgeTeam.exportReport());
       }
     });
   }

@@ -19,6 +19,11 @@ export * from './mas/tools/client';
 export * from './mas/agents/executor';
 export * from './mas/runtime';
 
+// Self-Simulation & Judge (Observability)
+export * from './mas/simulation';
+export * from './mas/simulation/scenarios';
+export * from './mas/judge';
+
 // API
 export * from './api/server';
 
